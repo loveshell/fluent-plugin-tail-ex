@@ -76,11 +76,31 @@ module Fluent
       end
     end
 
-    def receive_lines(lines, tag)
-      if @tag_prefix || @tag_suffix
-        @tag = @tag_prefix + tag + @tag_suffix
+    def receive_lines(lines, domain,server_ip)
+    #  if @tag_prefix || @tag_suffix
+    #    @tag = @tag_prefix + tag + @tag_suffix
+    #  end
+    es = MultiEventStream.new
+    lines.each {|line|
+      begin
+        line.chomp!  # remove \n
+        time, record = parse_line(line)
+        if time && record
+            es.add(time,{"server_ip" => server_ip,"domain" =>domain}.merge(record))
+        end
+      rescue
+        $log.warn line.dump, :error=>$!.to_s
+        $log.debug_backtrace
       end
-      super(lines)
+    }
+
+    unless es.empty?
+      begin
+        Engine.emit_stream(@tag, es)
+      rescue
+        # ignore errors. Engine shows logs and backtraces.
+      end
+    end
     end
 
     def start
@@ -106,8 +126,9 @@ module Fluent
       end
 
       def _receive_lines(lines)
-        tag = @path.tr('/', '.').gsub(/\.+/, '.').gsub(/^\./, '')
-        @parent_receive_lines.call(lines, tag)
+        domain=@path.scan(/(\/.*\/)(.*)\.access.log/)[0][1]
+        server_ip=`ifconfig eth0|awk -F '[ :]+' 'NR==2 {print $4}'`.chomp!
+        @parent_receive_lines.call(lines,domain,server_ip)
       end
 
       def close(loop=nil)
