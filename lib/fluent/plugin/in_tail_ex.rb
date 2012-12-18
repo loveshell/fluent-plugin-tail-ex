@@ -127,7 +127,13 @@ module Fluent
 
       def _receive_lines(lines)
         domain=@path.scan(/(\/.*\/)(.*)\.access.log/)[0][1]
-        server_ip=`ifconfig eth0|awk -F '[ :]+' 'NR==2 {print $4}'`.chomp!
+        ip_public=Socket.ip_address_list.detect{|intf| intf.ipv4? and !intf.ipv4_loopback? and !intf.ipv4_multicast? and !intf.ipv4_private?}.ip_address
+        ip_private=Socket.ip_address_list.detect{|intf| intf.ipv4_private?}.ip_address
+        if ip_public
+            server_ip = ip_public
+        else
+            server_ip = ip_private
+        end
         @parent_receive_lines.call(lines,domain,server_ip)
       end
 
